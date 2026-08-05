@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ type server struct {
 	httpServer *http.Server
 	store      store.Store
 	cancel     context.CancelFunc
+	logger     *log.Logger
 }
 
 func newServer(store store.Store, port int, cancel context.CancelFunc) *server {
