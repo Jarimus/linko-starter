@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 )
@@ -13,14 +12,28 @@ type closeFunc func() error
 func initializeLogger() (*slog.Logger, closeFunc, error) {
 	logFile := os.Getenv("LINKO_LOG_FILE")
 	if logFile != "" {
+
+		// Initialize debug handler
+		debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})
+
+		// Open log file and initialize info handler
 		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to open log file: %v", err)
 		}
-		multiWriter := bufio.NewWriterSize(io.MultiWriter(file, os.Stderr), 8192)
-		logger := slog.New(slog.NewTextHandler(multiWriter, nil))
+		bufWriter := bufio.NewWriterSize(file, 8192)
+		infoHandler := slog.NewTextHandler(bufWriter, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+
+		// Initialize logger
+		logger := slog.New(slog.NewMultiHandler(debugHandler, infoHandler))
+
+		// Build logger closer function
 		closeLoggerFunc := func() error {
-			err := multiWriter.Flush()
+			err := bufWriter.Flush()
 			if err != nil {
 				return fmt.Errorf("failed to flush logger buffer: %v", err)
 			}
