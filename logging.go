@@ -15,7 +15,8 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 
 		// Initialize debug handler
 		debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
+			Level:       slog.LevelDebug,
+			ReplaceAttr: replaceAttr,
 		})
 
 		// Open log file and initialize info handler
@@ -25,7 +26,8 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 		}
 		bufWriter := bufio.NewWriterSize(file, 8192)
 		infoHandler := slog.NewJSONHandler(bufWriter, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
+			Level:       slog.LevelInfo,
+			ReplaceAttr: replaceAttr,
 		})
 
 		// Initialize logger
@@ -46,4 +48,15 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 		return logger, closeLoggerFunc, nil
 	}
 	return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() error { return nil }, nil
+}
+
+func replaceAttr(groups []string, a slog.Attr) slog.Attr {
+	if a.Key == "error" {
+		err, ok := a.Value.Any().(error)
+		if !ok {
+			return a
+		}
+		return slog.String("error", fmt.Sprintf("%+v", err))
+	}
+	return a
 }
