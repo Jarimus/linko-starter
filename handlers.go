@@ -60,11 +60,7 @@ func (s *server) handlerShortenLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to shorten URL", http.StatusInternalServerError)
 		return
 	}
-	s.logger.Info(
-		"Successfully generated short code",
-		slog.String("shortcode", shortCode),
-		slog.String("long_url", longURL),
-	)
+	s.logger.Info("Successfully generated short code", slog.String("shortcode", shortCode), slog.String("long_url", longURL))
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	io.WriteString(w, shortCode)
@@ -76,7 +72,7 @@ func (s *server) handlerRedirect(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "not found", http.StatusNotFound)
 		} else {
-			s.logger.Error(fmt.Sprintf("failed to lookup URL: %v\n", err))
+			s.logger.Error("failed to lookup URL", "error", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 		}
 		return
@@ -86,7 +82,6 @@ func (s *server) handlerRedirect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "destination unavailable", http.StatusBadGateway)
 		return
 	}
-
 	redirectsMu.Lock()
 	redirects = append(redirects, strings.Repeat(longURL, 1024))
 	redirectsMu.Unlock()
