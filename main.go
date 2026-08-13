@@ -34,15 +34,23 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		return 1
 	}
+	// Runtime variables
+	hostname, err := os.Hostname()
+	if err != nil {
+		logger.Error("error getting hostname", "error", err)
+		return 1
+	}
 	logger = logger.With(
 		slog.String("git_sha", build.GitSHA),
 		slog.String("build_time", build.BuildTime),
+		slog.String("env", os.Getenv("ENV")),
+		slog.String("hostname", hostname),
 	)
 
 	// Create store
 	st, err := store.New(dataDir)
 	if err != nil {
-		logger.Error(fmt.Sprintf("failed to create store: %v", err))
+		logger.Error("failed to create store", "error", err)
 		return 1
 	}
 
@@ -68,11 +76,11 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 		return 0
 	}()
 	if err := s.shutdown(shutdownCtx); err != nil {
-		s.logger.Error(fmt.Sprintf("failed to shutdown server: %v", err))
+		s.logger.Error("failed to shutdown server: %v", "error", err)
 		return 1
 	}
 	if serverErr != nil {
-		s.logger.Error(fmt.Sprintf("server error: %v", serverErr))
+		s.logger.Error("server error: %v", "error", serverErr)
 		return 1
 	}
 
