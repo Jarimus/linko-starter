@@ -8,6 +8,8 @@ import (
 	"os"
 
 	"boot.dev/linko/internal/linkoerr"
+	"github.com/lmittmann/tint"
+	"github.com/mattn/go-isatty"
 	pkgerr "github.com/pkg/errors"
 )
 
@@ -23,45 +25,61 @@ type stackTracer interface {
 	StackTrace() pkgerr.StackTrace
 }
 
-func initializeLogger() (*slog.Logger, closeFunc, error) {
-	logFile := os.Getenv("LINKO_LOG_FILE")
-	if logFile != "" {
-
-		// Initialize debug handler
-		debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
+	handlers := []slog.Handler{
+		tint.NewTextHandler(os.Stderr, &tint.Options{
 			Level:       slog.LevelDebug,
 			ReplaceAttr: replaceAttr,
-		})
+			NoColor:     !(isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())),
+		}),
+	}
+	closers := []closeFunc{}
 
-		// Open log file and initialize info handler
-		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+	if logFile != "" {
+		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to open log file: %v", err)
+			return nil, nil, fmt.Errorf("failed to open log file: %w", err)
 		}
-		bufWriter := bufio.NewWriterSize(file, 8192)
-		infoHandler := slog.NewJSONHandler(bufWriter, &slog.HandlerOptions{
-			Level:       slog.LevelInfo,
-			ReplaceAttr: replaceAttr,
-		})
-
-		// Initialize logger
-		logger := slog.New(slog.NewMultiHandler(debugHandler, infoHandler))
-
-		// Build logger closer function
-		closeLoggerFunc := func() error {
-			err := bufWriter.Flush()
-			if err != nil {
-				return fmt.Errorf("failed to flush logger buffer: %v", err)
+		bufferedFile := bufio.NewWriterSize(file, 8192)
+		close := func() error {
+			if err := bufferedFile.Flush(); err != nil {
+				return fmt.Errorf("failed to flush log file: %w", err)
 			}
-			err = file.Close()
-			if err != nil {
-				return fmt.Errorf("failed to close log file: %v", err)
+			if err := file.Close(); err != nil {
+				return fmt.Errorf("failed to close log file: %w", err)
 			}
 			return nil
 		}
-		return logger, closeLoggerFunc, nil
+		handlers = append(handlers, slog.NewJSONHandler(bufferedFile, &slog.HandlerOptions{
+			Level:       slog.LevelInfo,
+			ReplaceAttr: replaceAttr,
+		}))
+		closers = append(closers, close)
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() error { return nil }, nil
+	closer := func() error {
+		var errs []error
+		for _, close := range closers {
+			if err := close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		return errors.Join(errs...)
+	}
+	return slog.New(slog.NewMultiHandler(handlers...)), closer, nil
+}
+
+func errorAttrs(err error) []slog.Attr {
+	attrs := []slog.Attr{
+		{Key: "message", Value: slog.StringValue(err.Error())},
+	}
+	attrs = append(attrs, linkoerr.Attrs(err)...)
+	if stackErr, ok := errors.AsType[stackTracer](err); ok {
+		attrs = append(attrs, slog.Attr{
+			Key:   "stack_trace",
+			Value: slog.StringValue(fmt.Sprintf("%+v", stackErr.StackTrace())),
+		})
+	}
+	return attrs
 }
 
 func replaceAttr(groups []string, a slog.Attr) slog.Attr {
@@ -71,30 +89,15 @@ func replaceAttr(groups []string, a slog.Attr) slog.Attr {
 			return a
 		}
 
-		attrs := linkoerr.Attrs(err)
-
-		if multiError, ok := errors.AsType[multiError](err); ok {
-			errs := multiError.Unwrap()
-			var errsGroup []slog.Attr
-			for i := range errs {
-				multiErrAttrs := append(linkoerr.Attrs(errs[i]), slog.Attr{Key: "message", Value: slog.StringValue(errs[i].Error())})
-				errGroup := slog.GroupAttrs(
-					fmt.Sprintf("error_%d", i+1),
-					multiErrAttrs...,
-				)
-				errsGroup = append(errsGroup, errGroup)
+		if multiErr, ok := errors.AsType[multiError](err); ok {
+			var errAttrs []slog.Attr
+			for i, e := range multiErr.Unwrap() {
+				errAttrs = append(errAttrs, slog.GroupAttrs(fmt.Sprintf("error_%d", i+1), errorAttrs(e)...))
 			}
-			attrs = append(attrs, errsGroup...)
-			return slog.GroupAttrs("errors", attrs...)
+			return slog.GroupAttrs("errors", errAttrs...)
 		}
-		// Check if the err has stackTracer
-		if stackErr, ok := errors.AsType[stackTracer](err); ok {
-			attrs = append(attrs, slog.Attr{
-				Key:   "stack_trace",
-				Value: slog.StringValue(fmt.Sprintf("%+v", stackErr.StackTrace())),
-			})
-		}
-		return slog.GroupAttrs("error", attrs...)
+
+		return slog.GroupAttrs("error", errorAttrs(err)...)
 	}
 	return a
 }

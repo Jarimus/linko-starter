@@ -29,11 +29,16 @@ func main() {
 
 func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string) int {
 	// initialize logger
-	logger, closeLoggerFunc, err := initializeLogger()
+	logger, closeLoggerFunc, err := initializeLogger(os.Getenv("LINKO_LOG_FILE"))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		return 1
 	}
+	defer func() {
+		if err := closeLoggerFunc(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to close logger: %v\n", err)
+		}
+	}()
 	// Runtime variables
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -56,7 +61,6 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 
 	// Create server
 	s := newServer(*st, httpPort, cancel, logger)
-
 	var serverErr error
 	go func() {
 		serverErr = s.start()
@@ -67,14 +71,7 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	defer func() int {
-		s.logger.Debug("Linko is shutting down")
-		if err := closeLoggerFunc(); err != nil {
-			s.logger.Error(fmt.Sprintf("logger error: %v", err))
-			return 1
-		}
-		return 0
-	}()
+	logger.Debug("Linko is shutting down")
 	if err := s.shutdown(shutdownCtx); err != nil {
 		s.logger.Error("failed to shutdown server: %v", "error", err)
 		return 1

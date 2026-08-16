@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,14 @@ const logContextKey contextKey = "log_context"
 
 type LogContext struct {
 	Username string
+	Error    error
+}
+
+func httpError(ctx context.Context, w http.ResponseWriter, status int, err error) {
+	if logCtx, ok := ctx.Value(logContextKey).(*LogContext); ok {
+		logCtx.Error = err
+	}
+	http.Error(w, err.Error(), status)
 }
 
 type spyReadCloser struct {
@@ -58,7 +67,7 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			// Let request resolve
 			next.ServeHTTP(spyWriter, r)
 			// Log the request and response
-			attrs := []slog.Attr{
+			attrs := []any{
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.String("client_ip", r.RemoteAddr),
@@ -66,11 +75,28 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 				slog.Int("request_body_bytes", spyReader.bytesRead),
 				slog.Int("response_status", spyWriter.statusCode),
 				slog.Int("response_body_bytes", spyWriter.bytesWritten),
+				slog.String("request_id", spyWriter.Header().Get("X-Request-ID")),
 			}
 			if logContext.Username != "" {
 				attrs = append(attrs, slog.String("user", logContext.Username))
 			}
-			logger.LogAttrs(r.Context(), slog.LevelInfo, "Served request", attrs...)
+			if logContext.Error != nil {
+				attrs = append(attrs, slog.Any("error", logContext.Error))
+			}
+			logger.Info("Served request", attrs...)
+		})
+	}
+}
+
+func requestID() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestIdHeader := r.Header.Get("X-Request-ID")
+			if requestIdHeader == "" {
+				requestIdHeader = rand.Text()
+			}
+			w.Header().Set("X-Request-ID", requestIdHeader)
+			next.ServeHTTP(w, r)
 		})
 	}
 }
