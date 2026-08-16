@@ -26,14 +26,15 @@ type stackTracer interface {
 }
 
 func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
-	handlers := []slog.Handler{
-		tint.NewTextHandler(os.Stderr, &tint.Options{
-			Level:       slog.LevelDebug,
-			ReplaceAttr: replaceAttr,
-			NoColor:     !(isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())),
-		}),
-	}
-	closers := []closeFunc{}
+	var handlers []slog.Handler
+	var closers []closeFunc
+
+	// Initialize console logger
+	handlers = append(handlers, tint.NewTextHandler(os.Stderr, &tint.Options{
+		Level:       slog.LevelDebug,
+		ReplaceAttr: replaceAttr,
+		NoColor:     !(isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())),
+	}))
 
 	if logFile != "" {
 		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
@@ -58,10 +59,8 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 	}
 	closer := func() error {
 		var errs []error
-		for _, close := range closers {
-			if err := close(); err != nil {
-				errs = append(errs, err)
-			}
+		for _, closer := range closers {
+			errs = append(errs, closer())
 		}
 		return errors.Join(errs...)
 	}
