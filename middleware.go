@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"slices"
 	"time"
 )
 
@@ -17,24 +16,6 @@ const logContextKey contextKey = "log_context"
 type LogContext struct {
 	Username string
 	Error    error
-	ErrorMsg string
-}
-
-func httpError(ctx context.Context, w http.ResponseWriter, status int, err error) {
-	genericStatusCodes := []int{401, 403, 500}
-	var errMsg string
-
-	if slices.Contains(genericStatusCodes, status) {
-		errMsg = http.StatusText(status)
-	} else {
-		errMsg = err.Error()
-	}
-
-	if logCtx, ok := ctx.Value(logContextKey).(*LogContext); ok {
-		logCtx.Error = err
-		logCtx.ErrorMsg = errMsg
-	}
-	http.Error(w, errMsg, status)
 }
 
 type spyReadCloser struct {

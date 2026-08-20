@@ -35,7 +35,7 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 		}
 		ok, err := s.validatePassword(password, stored)
 		if err != nil {
-			httpError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("Internal Server Error: %w", err))
+			httpError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("internal server error: %w", err))
 			return
 		}
 		if !ok {
