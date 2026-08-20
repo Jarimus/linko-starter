@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
+	"slices"
 
 	"boot.dev/linko/internal/linkoerr"
 	"github.com/lmittmann/tint"
@@ -82,6 +84,36 @@ func errorAttrs(err error) []slog.Attr {
 }
 
 func replaceAttr(groups []string, a slog.Attr) slog.Attr {
+	// Redact certain key values
+	redactList := []string{
+		"user",
+		"password",
+		"apikey",
+		"secret",
+		"pin",
+		"creditcardno",
+	}
+	if slices.Contains(redactList, a.Key) {
+		a.Value = slog.StringValue("[REDACTED]")
+	}
+	// Redact password from urls
+	urlRedactList := []string{
+		"long_url",
+		"url",
+		"short_url",
+	}
+	if slices.Contains(urlRedactList, a.Key) {
+		parsedURL, err := url.Parse(a.Value.String())
+		if err != nil {
+			return a
+		}
+		if _, ok := parsedURL.User.Password(); !ok {
+			return a
+		}
+		parsedURL.User = url.UserPassword(parsedURL.User.Username(), "REDACTED")
+		a.Value = slog.StringValue(parsedURL.String())
+	}
+	// Handle error keys
 	if a.Key == "error" {
 		err, ok := a.Value.Any().(error)
 		if !ok {
