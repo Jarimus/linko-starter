@@ -5,6 +5,8 @@ services:
       - 9090:9090
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "172.27.173.127:host-gateway"
   node-exporter:
     image: prom/node-exporter:latest
     ports:
@@ -17,6 +19,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - grafana_data:/var/lib/grafana
+  
 
 volumes:
   grafana_data:
