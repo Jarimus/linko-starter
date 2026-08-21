@@ -23,7 +23,7 @@ type server struct {
 func newServer(store store.Store, port int, cancel context.CancelFunc, logger *slog.Logger) *server {
 	mux := http.NewServeMux()
 
-	handler := requestID()(requestLogger(logger)(mux))
+	handler := requestID()(requestLogger(logger)(metricsMiddleware(mux)))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
